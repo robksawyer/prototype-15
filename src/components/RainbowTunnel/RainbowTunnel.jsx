@@ -1,64 +1,23 @@
 /**
  * @file RainbowTunnel.js
  */
-import * as React from 'react'
-import PropTypes from 'prop-types'
-import * as THREE from 'three'
-import { Canvas, useThree, useFrame } from '@react-three/fiber'
-import { EffectComposer, SSAO, Bloom } from '@react-three/postprocessing'
-import { Environment } from '@react-three/drei'
+import * as React from 'react';
+import PropTypes from 'prop-types';
+import * as THREE from 'three';
+import { Canvas, useFrame } from '@react-three/fiber';
+import { EffectComposer, Bloom } from '@react-three/postprocessing';
+import { Stars } from '@react-three/drei';
+import { useLayoutEffect } from '@/hooks/useIsomorphicLayoutEffect';
 
-import { useWindowSize } from '@/hooks/useWindowSize'
-
-import styles from './RainbowTunnel.module.css'
-
-/**
- * StarField
- * An alternate star field.
- * @param {*} param0
- * @returns
- */
-const StarField = ({ count = 3000 }) => {
-  const geom = React.useRef()
-  const [positions] = React.useMemo(() => {
-    const initialPositions = []
-
-    for (let i = 0; i < count; i += 1) {
-      initialPositions.push(THREE.Math.randFloatSpread(1500))
-      initialPositions.push(THREE.Math.randFloatSpread(1500))
-      initialPositions.push(THREE.Math.randFloatSpread(1500))
-    }
-
-    const positions = new Float32Array(initialPositions)
-    return [positions]
-  }, [count])
-
-  return (
-    <points
-      ref={geom}
-      position={[0, 10, 0]}
-      rotation={[-Math.PI / 4, 0, Math.PI / 6]}
-    >
-      <bufferGeometry>
-        <bufferAttribute
-          attachObject={['attributes', 'position']}
-          count={positions.length / 3}
-          array={positions}
-          itemSize={3}
-        />
-      </bufferGeometry>
-      <pointsMaterial color="#ffffff" size={0.5} />
-    </points>
-  )
-}
+import styles from './RainbowTunnel.module.css';
 
 const Tunnel = ({
   tubularSegments = 1000,
   radialSegments = 3,
   tubeRadius = 2,
+  shapePath = [],
   hueStart,
   hueEnd,
-  shapePath = [],
   cameraSpeed,
   lightSpeed,
   lightColor,
@@ -66,111 +25,52 @@ const Tunnel = ({
   lightDistance,
   ambientLight,
 }) => {
-  const geometry = React.useRef()
-  const groupRef = React.useRef()
-  const [vertCount, setVertCount] = React.useState(0)
+  const pct = React.useRef(0);
+  const pct2 = React.useRef(0);
+  const geometry = React.useRef();
+  const groupRef = React.useRef();
+  const [vertCount, setVertCount] = React.useState(0);
+  const path = React.useMemo(
+    () =>
+      new THREE.CatmullRomCurve3(
+        shapePath.map(path => new THREE.Vector3(...path)),
+      ),
+    [shapePath],
+  );
 
-  const { camera, gl } = useThree()
-  const { width, height } = useWindowSize()
+  useLayoutEffect(() => {
+    if (!vertCount) setVertCount(geometry.current.attributes.position.count);
+  }, [geometry, vertCount]);
 
-  const points = []
-  for (let i = 0; i < shapePath.length; i++) {
-    var x = shapePath[i][0]
-    var y = shapePath[i][2]
-    var z = shapePath[i][1]
-    points[i] = new THREE.Vector3(x, y, z)
-  }
-
-  const path = new THREE.CatmullRomCurve3(points)
-
-  let pct = React.useRef(0)
-  let pct2 = React.useRef(0)
-
-  React.useLayoutEffect(() => {
-    if (geometry.current && !vertCount) {
-      const _count = geometry.current.attributes.position.count
-      setVertCount(_count)
-    }
-  }, [geometry, vertCount])
-
-  React.useEffect(() => {
-    const resized = () => {
-      camera.aspect = width / height
-      camera.updateProjectionMatrix()
-      gl.setSize(width, height)
-    }
-    window.addEventListener('resize', resized)
-    return () => window.removeEventListener('resize', resized)
-  }, [camera, gl, height, width])
-
-  // Build a hue array for the colors.
-  // This is applied to buffer attribute
   const colorArray = React.useMemo(() => {
-    try {
-      let hue = hueStart
-      let hup = true
-      const tempColor = new THREE.Color()
-      return Float32Array.from(
-        new Array(vertCount).fill().flatMap((_, i) => {
-          hup === 1 ? hue++ : hue--
-          hup = hue === hueEnd ? false : hue === hueStart ? true : 0
-          return tempColor.setHSL(hue / 100, 1, 0.5).toArray()
-        })
-      )
-    } catch (err) {
-      console.error('There was an error assigning the hues', err)
-    }
-  }, [vertCount, hueEnd, hueStart])
+    let hue = hueStart;
+    let hup = true;
+    const tempColor = new THREE.Color();
+    return Float32Array.from(
+      new Array(vertCount).fill().flatMap((_, i) => {
+        hup === 1 ? hue++ : hue--;
+        hup = hue === hueEnd ? false : hue === hueStart ? true : 0;
+        return tempColor.setHSL(hue / 100, 1, 0.5).toArray();
+      }),
+    );
+  }, [vertCount, hueEnd, hueStart]);
 
-  useFrame(({ camera, mouse, viewport }) => {
-    pct.current += cameraSpeed
-    pct2.current += lightSpeed
-
-    const pt1 = path.getPointAt(pct.current % 1)
-    const pt2 = path.getPointAt((pct.current + 0.01) % 1)
-
-    camera.position.x = pt1.x
-    camera.position.y = pt1.y
-    camera.position.z = pt1.z
-    camera.lookAt(pt2)
-
-    const { children } = groupRef.current
-
-    if (children && children[0] && children[5]) {
-      children[0].position.set(pt2.x, pt2.y, pt2.z)
-
-      // Makes the light follow the mouse
-      // children[0].position.set((mouse.x * viewport.width) / 2, (mouse.y * viewport.height) / 2, 0)
-
-      children[1].position.set(
-        path.getPointAt((pct2.current + 0.0) % 1).x,
-        path.getPointAt((pct2.current + 0.0) % 1).y,
-        path.getPointAt((pct2.current + 0.0) % 1).z
-      )
-      children[2].position.set(
-        path.getPointAt((pct2.current + 0.2) % 1).x,
-        path.getPointAt((pct2.current + 0.2) % 1).y,
-        path.getPointAt((pct2.current + 0.2) % 1).z
-      )
-      children[3].position.set(
-        path.getPointAt((pct2.current + 0.4) % 1).x,
-        path.getPointAt((pct2.current + 0.4) % 1).y,
-        path.getPointAt((pct2.current + 0.4) % 1).z
-      )
-      children[4].position.set(
-        path.getPointAt((pct2.current + 0.6) % 1).x,
-        path.getPointAt((pct2.current + 0.6) % 1).y,
-        path.getPointAt((pct2.current + 0.6) % 1).z
-      )
-      children[5].position.set(
-        path.getPointAt((pct2.current + 0.8) % 1).x,
-        path.getPointAt((pct2.current + 0.8) % 1).y,
-        path.getPointAt((pct2.current + 0.8) % 1).z
-      )
-    }
-
-    camera.updateProjectionMatrix()
-  })
+  useFrame(({ camera }) => {
+    const children = groupRef.current.children;
+    const pt1 = path.getPointAt(pct.current % 1);
+    const pt2 = path.getPointAt((pct.current + 0.01) % 1);
+    pct.current += cameraSpeed;
+    pct2.current += lightSpeed;
+    camera.position.copy(pt1);
+    camera.lookAt(pt2);
+    children[0].position.copy(pt2);
+    children[1].position.copy(path.getPointAt((pct2.current + 0.0) % 1));
+    children[2].position.copy(path.getPointAt((pct2.current + 0.2) % 1));
+    children[3].position.copy(path.getPointAt((pct2.current + 0.4) % 1));
+    children[4].position.copy(path.getPointAt((pct2.current + 0.6) % 1));
+    children[5].position.copy(path.getPointAt((pct2.current + 0.8) % 1));
+    camera.updateProjectionMatrix();
+  });
 
   return (
     <>
@@ -203,9 +103,8 @@ const Tunnel = ({
         />
         <ambientLight intensity={1} color={ambientLight} />
       </group>
-
       <mesh>
-        <tubeBufferGeometry
+        <tubeGeometry
           ref={geometry}
           args={[path, tubularSegments, tubeRadius, radialSegments, true]}
         >
@@ -213,16 +112,16 @@ const Tunnel = ({
             attachObject={['attributes', 'color']}
             args={[colorArray, 3]}
           />
-        </tubeBufferGeometry>
+        </tubeGeometry>
         <meshLambertMaterial side={THREE.BackSide} vertexColors wireframe />
       </mesh>
     </>
-  )
-}
+  );
+};
 
 const RainbowTunnel = ({
   tagName: Tag = 'div',
-  className = 'fixed top-0 left-0 w-screen h-screen bg-hot-pink',
+  className = 'fixed top-0 left-0 w-screen h-screen bg-black',
   variant = 'default',
   children = '',
   shapePath = [
@@ -271,10 +170,7 @@ const RainbowTunnel = ({
   lightDistance = 20,
   hueStart = 0, // Hue-Start
   hueEnd = 360, // Hue-End
-  stars = 3000,
 }) => {
-  const { width, height } = useWindowSize()
-
   return (
     <Tag
       className={`${styles.rainbow_tunnel} ${
@@ -284,29 +180,24 @@ const RainbowTunnel = ({
       <Canvas
         camera={{
           fov: 60,
-          aspect: width / height,
-          near: 0.001,
-          far: 1000,
+          far: 20000,
         }}
       >
-        <StarField count={stars} />
-        <React.Suspense fallback={null}>
-          <Tunnel
-            cameraSpeed={cameraSpeed}
-            lightSpeed={lightSpeed}
-            tubularSegments={tubularSegments}
-            radialSegments={radialSegments}
-            tubeRadius={tubeRadius}
-            hueStart={hueStart}
-            hueEnd={hueEnd}
-            shapePath={shapePath}
-            lightColor={lightColor}
-            lightIntensity={lightIntensity}
-            lightDistance={lightDistance}
-            ambientLight={ambientLight}
-          />
-          <Environment preset="warehouse" />
-        </React.Suspense>
+        <Tunnel
+          cameraSpeed={cameraSpeed}
+          lightSpeed={lightSpeed}
+          tubularSegments={tubularSegments}
+          radialSegments={radialSegments}
+          tubeRadius={tubeRadius}
+          hueStart={hueStart}
+          hueEnd={hueEnd}
+          shapePath={shapePath}
+          lightColor={lightColor}
+          lightIntensity={lightIntensity}
+          lightDistance={lightDistance}
+          ambientLight={ambientLight}
+        />
+        <Stars radius={500} />
         <EffectComposer multisampling={0}>
           <Bloom
             intensity={0.5}
@@ -323,14 +214,14 @@ const RainbowTunnel = ({
         </EffectComposer>
       </Canvas>
     </Tag>
-  )
-}
+  );
+};
 
 RainbowTunnel.propTypes = {
   tagName: PropTypes.string,
   className: PropTypes.string,
   variant: PropTypes.oneOf(['default']),
   children: PropTypes.node,
-}
+};
 
-export default RainbowTunnel
+export default RainbowTunnel;
